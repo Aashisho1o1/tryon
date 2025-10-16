@@ -46,6 +46,19 @@ class ImagesModel(BaseModel):
     gallery: List[str] = []
 
 
+class MaterialProperties(BaseModel):
+    """Material rendering properties for realistic appearance"""
+    type: str = "gold"  # gold, silver, diamond, pearl, platinum
+    opacity: float = Field(0.95, ge=0, le=1)
+
+
+class PhysicsConfig(BaseModel):
+    """Simple physics simulation config for natural movement"""
+    enabled: bool = True
+    damping: float = Field(0.85, ge=0, le=1)  # How quickly movement stops
+    stiffness: float = Field(0.15, ge=0, le=1)  # How springy the motion is
+
+
 class ARConfigModel(BaseModel):
     """AR rendering configuration"""
     color: str = "#FFD700"
@@ -53,6 +66,12 @@ class ARConfigModel(BaseModel):
     position_offset: Dict[str, int] = {"x": 0, "y": 0}
     landmarks: List[int] = [234, 454]  # MediaPipe landmarks
     render_type: str = "circle"  # circle, image, 3d_model
+    
+    # Optional advanced features (won't break existing code)
+    material: Optional[MaterialProperties] = MaterialProperties()
+    physics: Optional[PhysicsConfig] = PhysicsConfig()
+    auto_scale: bool = True  # Use proportional scaling based on face size
+    depth_offset: float = 0.0  # Z-axis offset for depth perception
 
 
 class MetadataModel(BaseModel):
