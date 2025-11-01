@@ -1,0 +1,7 @@
+{
+  "name": "Golden Diamond Ring",
+  "type": "ring",
+  "description": "Elegant 14K gold ring with brilliant diamond",
+  "price": {"amount": 25000, "currency": "NPR"},
+  "metadata": {"metal": "gold", "stone": "diamond", "style": "elegant"}
+}

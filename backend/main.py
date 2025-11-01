@@ -535,7 +535,8 @@ async def ai_tryon(
         # Get AI provider from settings
         provider_name = settings.AI_PROVIDER
         provider_config = {
-            "api_key": settings.FAL_API_KEY if provider_name == "fal" else settings.REPLICATE_API_TOKEN,
+            "api_key": settings.FAL_API_KEY,
+            "api_token": settings.REPLICATE_API_TOKEN,
             "model": settings.FAL_MODEL if provider_name == "fal" else "black-forest-labs/flux-1.1-pro",
         }
 
@@ -582,4 +583,4 @@ async def ai_tryon(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=settings.DEBUG)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=settings.DEBUG)

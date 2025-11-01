@@ -11,7 +11,7 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 aiofiles==23.2.1
 httpx==0.26.0
-pillow==10.2.0
+pillow==11.0.0
 
 # AI Providers
 fal-client==0.4.1

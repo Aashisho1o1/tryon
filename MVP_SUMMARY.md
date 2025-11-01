@@ -1,4 +1,4 @@
-# 🎉 AI Jewelry Try-On MVP - COMPLETED!
+source venv # 🎉 AI Jewelry Try-On MVP - COMPLETED!
 
 **Branch:** `main-Genius`
 **Status:** ✅ Ready to ship
