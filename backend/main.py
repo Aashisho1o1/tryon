@@ -22,7 +22,7 @@ from models import (
     ErrorResponse,
     ARConfigModel,
 )
-from lib.ai_providers import create_provider
+from lib.ai_providers import create_provider, close_http_client
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     await MongoDB.close_db()
+    await close_http_client()  # Close shared HTTP client
     logger.info("Application shutdown")
 
 
@@ -75,6 +76,20 @@ def create_share_link(short_code: str) -> dict:
         "full_url": f"https://yoursite.com/try-on/{short_code}",
         "qr_code": f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://yoursite.com/try-on/{short_code}",
     }
+
+
+def convert_objectid_to_str(doc: dict) -> dict:
+    """Convert MongoDB ObjectId to string in place for JSON serialization"""
+    if doc and "_id" in doc:
+        doc["_id"] = str(doc["_id"])
+    return doc
+
+
+def convert_objectids_in_list(docs: list) -> list:
+    """Convert MongoDB ObjectIds to strings in a list of documents"""
+    for doc in docs:
+        convert_objectid_to_str(doc)
+    return docs
 
 
 # ==============================================
@@ -144,15 +159,21 @@ async def get_all_jewelry(
         # Get items with projection and count in parallel
         cursor = db.jewelry_items.find(query, projection).skip(skip).limit(page_size).sort("created_at", -1)
         
-        # Always use count_documents for accurate counts
-        items, total_count = await asyncio.gather(
-            cursor.to_list(length=page_size),
-            db.jewelry_items.count_documents(query)
-        )
+        # Use estimated_document_count for unfiltered first page for better performance
+        # Use exact count_documents for filtered queries or paginated results
+        if page == 1 and not type and status == "active":
+            items, total_count = await asyncio.gather(
+                cursor.to_list(length=page_size),
+                db.jewelry_items.estimated_document_count()
+            )
+        else:
+            items, total_count = await asyncio.gather(
+                cursor.to_list(length=page_size),
+                db.jewelry_items.count_documents(query)
+            )
 
         # Convert ObjectId to string efficiently
-        for item in items:
-            item["_id"] = str(item["_id"])
+        convert_objectids_in_list(items)
 
         total_pages = (total_count + page_size - 1) // page_size
 
@@ -182,7 +203,7 @@ async def get_jewelry_by_id(
         if not item:
             raise HTTPException(status_code=404, detail="Jewelry item not found")
 
-        item["_id"] = str(item["_id"])
+        convert_objectid_to_str(item)
 
         # Track view
         await db.jewelry_items.update_one(
@@ -292,7 +313,7 @@ async def update_jewelry(
             existing = await db.jewelry_items.find_one({"item_id": item_id})
             if not existing:
                 raise HTTPException(status_code=404, detail="Jewelry item not found")
-            existing["_id"] = str(existing["_id"])
+            convert_objectid_to_str(existing)
             return {
                 "success": True,
                 "message": "No changes to update",
@@ -311,7 +332,7 @@ async def update_jewelry(
         if not updated_item:
             raise HTTPException(status_code=404, detail="Jewelry item not found")
 
-        updated_item["_id"] = str(updated_item["_id"])
+        convert_objectid_to_str(updated_item)
 
         return {
             "success": True,
@@ -414,8 +435,7 @@ async def get_item_analytics(
             raise HTTPException(status_code=404, detail="Jewelry item not found")
 
         # Convert ObjectId to string efficiently
-        for event in events:
-            event["_id"] = str(event["_id"])
+        convert_objectids_in_list(events)
 
         return {
             "success": True,
@@ -479,8 +499,7 @@ async def get_overall_analytics(
         conversion_rate = (conversions / try_ons * 100) if try_ons > 0 else 0
 
         # Convert ObjectId to string efficiently
-        for item in top_items:
-            item["_id"] = str(item["_id"])
+        convert_objectids_in_list(top_items)
 
         return {
             "success": True,
