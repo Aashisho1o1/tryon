@@ -165,9 +165,16 @@ class ReplicateProvider(AIProvider):
                     result = response.json()
                     prediction_url = result.get("urls", {}).get("get", "")
 
-                    # Poll for result (simplified - in production use webhooks)
-                    for _ in range(30):  # Max 30 attempts
-                        await asyncio.sleep(1)  # Simple delay
+                    # Poll for result with exponential backoff
+                    # In production, webhooks are recommended for better efficiency
+                    max_attempts = 20
+                    base_delay = 1.0  # Start with 1 second
+                    
+                    for attempt in range(max_attempts):
+                        # Exponential backoff: 1s, 2s, 4s, 8s, then cap at 10s
+                        delay = min(base_delay * (2 ** attempt), 10.0)
+                        await asyncio.sleep(delay)
+                        
                         status_response = await client.get(prediction_url, headers=headers)
                         status_data = status_response.json()
 

@@ -61,7 +61,6 @@ function ResultDisplay({ result, jewelry, onReset, onTryAnother }) {
             <img
               src={result.image_url}
               alt="Try-on result"
-              loading="eager"
               className="w-full h-auto"
             />
           </div>

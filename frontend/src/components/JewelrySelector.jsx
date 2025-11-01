@@ -2,10 +2,23 @@ import { useState, useEffect, useCallback, useMemo, memo } from 'react';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const MAX_CACHE_SIZE = 20; // Limit cache size to prevent memory leaks
 
 // Cache for jewelry data with timestamp to avoid stale data
-// Using a simple cache - consider using React Query or SWR for production
+// Note: This is a simple in-memory cache suitable for small-scale use
+// For production, consider using React Query, SWR, or Redux with proper
+// cache invalidation strategies
 const jewelryCache = new Map();
+
+// Helper function to manage cache size
+function setCacheWithLimit(key, value) {
+  // If cache is full, remove oldest entry
+  if (jewelryCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = jewelryCache.keys().next().value;
+    jewelryCache.delete(firstKey);
+  }
+  jewelryCache.set(key, value);
+}
 
 function JewelrySelector({ onSelect, userPhoto }) {
   const [jewelry, setJewelry] = useState([]);
@@ -36,8 +49,8 @@ function JewelrySelector({ onSelect, userPhoto }) {
       const data = await response.json();
 
       if (data.success) {
-        // Cache the results with timestamp
-        jewelryCache.set(cacheKey, {
+        // Cache the results with timestamp and size limit
+        setCacheWithLimit(cacheKey, {
           data: data.items,
           timestamp: now
         });

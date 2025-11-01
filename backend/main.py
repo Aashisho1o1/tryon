@@ -197,9 +197,20 @@ async def get_jewelry_by_id(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Module-level default values to avoid redundant object creation
-DEFAULT_AR_CONFIG = ARConfigModel().dict()
-DEFAULT_STOCK = {"available": True, "quantity": 0, "low_stock_threshold": 3}
+# Factory functions for default values to avoid redundant object creation
+def get_default_ar_config() -> dict:
+    """Get default AR configuration"""
+    return ARConfigModel().dict()
+
+
+def get_default_stock() -> dict:
+    """Get default stock configuration"""
+    return {"available": True, "quantity": 0, "low_stock_threshold": 3}
+
+
+# Cache default configs at module level for better performance
+_DEFAULT_AR_CONFIG = None
+_DEFAULT_STOCK = None
 
 
 @app.post(f"{settings.API_PREFIX}/jewelry", status_code=status.HTTP_201_CREATED)
@@ -209,6 +220,14 @@ async def create_jewelry(
 ):
     """Create new jewelry item"""
     try:
+        global _DEFAULT_AR_CONFIG, _DEFAULT_STOCK
+        
+        # Lazy initialize defaults
+        if _DEFAULT_AR_CONFIG is None:
+            _DEFAULT_AR_CONFIG = get_default_ar_config()
+        if _DEFAULT_STOCK is None:
+            _DEFAULT_STOCK = get_default_stock()
+        
         # Generate unique ID and share link
         item_id = generate_short_code()
         share_link = create_share_link(item_id)
@@ -223,9 +242,9 @@ async def create_jewelry(
             "description": item.description,
             "price": item.price.dict(),
             "images": {"thumbnail": None, "main": None, "gallery": []},
-            "ar_config": item.ar_config.dict() if item.ar_config else DEFAULT_AR_CONFIG,
+            "ar_config": item.ar_config.dict() if item.ar_config else _DEFAULT_AR_CONFIG,
             "metadata": item.metadata.dict() if item.metadata else {},
-            "stock": item.stock.dict() if item.stock else DEFAULT_STOCK,
+            "stock": item.stock.dict() if item.stock else _DEFAULT_STOCK,
             "share_link": share_link,
             "analytics": {
                 "views": 0,

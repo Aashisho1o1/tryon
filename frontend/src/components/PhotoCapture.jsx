@@ -1,6 +1,10 @@
 import { useState, useRef, useCallback, memo } from 'react';
 import Webcam from 'react-webcam';
 
+// Configuration constants
+const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
 function PhotoCapture({ onCapture }) {
   const [mode, setMode] = useState('upload'); // 'upload' or 'camera'
   const [preview, setPreview] = useState(null);
@@ -12,9 +16,9 @@ function PhotoCapture({ onCapture }) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      alert('File size must be less than 10MB');
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      alert(`File size must be less than ${MAX_FILE_SIZE_MB}MB`);
       return;
     }
 
@@ -124,7 +128,7 @@ function PhotoCapture({ onCapture }) {
                     Click to upload photo
                   </span>
                   <span className="text-gray-500 text-sm">
-                    PNG, JPG up to 10MB
+                    PNG, JPG up to {MAX_FILE_SIZE_MB}MB
                   </span>
                 </label>
               </div>
