@@ -141,23 +141,14 @@ async def get_all_jewelry(
             "created_at": 1
         }
 
-        # Get items with projection and process in parallel
+        # Get items with projection and count in parallel
         cursor = db.jewelry_items.find(query, projection).skip(skip).limit(page_size).sort("created_at", -1)
         
-        # Use estimated_document_count for first page to avoid expensive count on large collections
-        # For other pages, use count_documents only if needed
-        if page == 1 and not type and status == "active":
-            # Use faster estimated count for first page of all items
-            items, total_count = await asyncio.gather(
-                cursor.to_list(length=page_size),
-                db.jewelry_items.estimated_document_count()
-            )
-        else:
-            # Use exact count for filtered queries
-            items, total_count = await asyncio.gather(
-                cursor.to_list(length=page_size),
-                db.jewelry_items.count_documents(query)
-            )
+        # Always use count_documents for accurate counts
+        items, total_count = await asyncio.gather(
+            cursor.to_list(length=page_size),
+            db.jewelry_items.count_documents(query)
+        )
 
         # Convert ObjectId to string efficiently
         for item in items:
@@ -206,6 +197,11 @@ async def get_jewelry_by_id(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Module-level default values to avoid redundant object creation
+DEFAULT_AR_CONFIG = ARConfigModel().dict()
+DEFAULT_STOCK = {"available": True, "quantity": 0, "low_stock_threshold": 3}
+
+
 @app.post(f"{settings.API_PREFIX}/jewelry", status_code=status.HTTP_201_CREATED)
 async def create_jewelry(
     item: JewelryItemCreate,
@@ -217,12 +213,8 @@ async def create_jewelry(
         item_id = generate_short_code()
         share_link = create_share_link(item_id)
 
-        # Prepare document - use model_dump() for Pydantic v2
+        # Prepare document
         now = datetime.utcnow()
-        
-        # Default values to avoid redundant object creation
-        default_ar_config = ARConfigModel().dict()
-        default_stock = {"available": True, "quantity": 0, "low_stock_threshold": 3}
         
         jewelry_doc = {
             "item_id": item_id,
@@ -231,9 +223,9 @@ async def create_jewelry(
             "description": item.description,
             "price": item.price.dict(),
             "images": {"thumbnail": None, "main": None, "gallery": []},
-            "ar_config": item.ar_config.dict() if item.ar_config else default_ar_config,
+            "ar_config": item.ar_config.dict() if item.ar_config else DEFAULT_AR_CONFIG,
             "metadata": item.metadata.dict() if item.metadata else {},
-            "stock": item.stock.dict() if item.stock else default_stock,
+            "stock": item.stock.dict() if item.stock else DEFAULT_STOCK,
             "share_link": share_link,
             "analytics": {
                 "views": 0,
@@ -277,7 +269,16 @@ async def update_jewelry(
         # Prepare update data with exclude_unset to avoid updating unchanged fields
         update_data = item.dict(exclude_unset=True)
         if not update_data:
-            raise HTTPException(status_code=400, detail="No fields to update")
+            # Return success for no-op updates to maintain backwards compatibility
+            existing = await db.jewelry_items.find_one({"item_id": item_id})
+            if not existing:
+                raise HTTPException(status_code=404, detail="Jewelry item not found")
+            existing["_id"] = str(existing["_id"])
+            return {
+                "success": True,
+                "message": "No changes to update",
+                "item": existing,
+            }
             
         update_data["updated_at"] = datetime.utcnow()
 

@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
 import httpx
 import logging
-import base64
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +167,7 @@ class ReplicateProvider(AIProvider):
 
                     # Poll for result (simplified - in production use webhooks)
                     for _ in range(30):  # Max 30 attempts
-                        await httpx.AsyncClient().get("https://httpbin.org/delay/1")  # Simple delay
+                        await asyncio.sleep(1)  # Simple delay
                         status_response = await client.get(prediction_url, headers=headers)
                         status_data = status_response.json()
 

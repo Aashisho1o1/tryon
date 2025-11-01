@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, memo } from 'react';
 
 const API_BASE = 'http://localhost:8000/api/v1';
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-// Cache for jewelry data to avoid redundant API calls
+// Cache for jewelry data with timestamp to avoid stale data
+// Using a simple cache - consider using React Query or SWR for production
 const jewelryCache = new Map();
 
 function JewelrySelector({ onSelect, userPhoto }) {
@@ -14,10 +16,12 @@ function JewelrySelector({ onSelect, userPhoto }) {
   // Memoized fetch function to prevent recreation on every render
   const fetchJewelry = useCallback(async (currentFilter) => {
     const cacheKey = `jewelry_${currentFilter}`;
+    const now = Date.now();
     
-    // Check cache first
-    if (jewelryCache.has(cacheKey)) {
-      setJewelry(jewelryCache.get(cacheKey));
+    // Check cache with expiration
+    const cached = jewelryCache.get(cacheKey);
+    if (cached && (now - cached.timestamp) < CACHE_DURATION) {
+      setJewelry(cached.data);
       setLoading(false);
       return;
     }
@@ -32,8 +36,11 @@ function JewelrySelector({ onSelect, userPhoto }) {
       const data = await response.json();
 
       if (data.success) {
-        // Cache the results
-        jewelryCache.set(cacheKey, data.items);
+        // Cache the results with timestamp
+        jewelryCache.set(cacheKey, {
+          data: data.items,
+          timestamp: now
+        });
         setJewelry(data.items);
       } else {
         setError('Failed to load jewelry');
