@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from nanoid import generate
 import logging
+import asyncio
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
@@ -127,16 +128,41 @@ async def get_all_jewelry(
         # Calculate skip
         skip = (page - 1) * page_size
 
-        # Get items
-        cursor = db.jewelry_items.find(query).skip(skip).limit(page_size).sort("created_at", -1)
-        items = await cursor.to_list(length=page_size)
+        # Use projection to reduce data transfer - exclude large fields if not needed
+        projection = {
+            "_id": 1,
+            "item_id": 1,
+            "name": 1,
+            "type": 1,
+            "description": 1,
+            "price": 1,
+            "images": 1,
+            "status": 1,
+            "created_at": 1
+        }
 
-        # Convert ObjectId to string
+        # Get items with projection and process in parallel
+        cursor = db.jewelry_items.find(query, projection).skip(skip).limit(page_size).sort("created_at", -1)
+        
+        # Use estimated_document_count for first page to avoid expensive count on large collections
+        # For other pages, use count_documents only if needed
+        if page == 1 and not type and status == "active":
+            # Use faster estimated count for first page of all items
+            items, total_count = await asyncio.gather(
+                cursor.to_list(length=page_size),
+                db.jewelry_items.estimated_document_count()
+            )
+        else:
+            # Use exact count for filtered queries
+            items, total_count = await asyncio.gather(
+                cursor.to_list(length=page_size),
+                db.jewelry_items.count_documents(query)
+            )
+
+        # Convert ObjectId to string efficiently
         for item in items:
             item["_id"] = str(item["_id"])
 
-        # Get total count
-        total_count = await db.jewelry_items.count_documents(query)
         total_pages = (total_count + page_size - 1) // page_size
 
         return {
@@ -191,8 +217,13 @@ async def create_jewelry(
         item_id = generate_short_code()
         share_link = create_share_link(item_id)
 
-        # Prepare document
+        # Prepare document - use model_dump() for Pydantic v2
         now = datetime.utcnow()
+        
+        # Default values to avoid redundant object creation
+        default_ar_config = ARConfigModel().dict()
+        default_stock = {"available": True, "quantity": 0, "low_stock_threshold": 3}
+        
         jewelry_doc = {
             "item_id": item_id,
             "name": item.name,
@@ -200,9 +231,9 @@ async def create_jewelry(
             "description": item.description,
             "price": item.price.dict(),
             "images": {"thumbnail": None, "main": None, "gallery": []},
-            "ar_config": item.ar_config.dict() if item.ar_config else ARConfigModel().dict(),
+            "ar_config": item.ar_config.dict() if item.ar_config else default_ar_config,
             "metadata": item.metadata.dict() if item.metadata else {},
-            "stock": item.stock.dict() if item.stock else {"available": True, "quantity": 0, "low_stock_threshold": 3},
+            "stock": item.stock.dict() if item.stock else default_stock,
             "share_link": share_link,
             "analytics": {
                 "views": 0,
@@ -243,22 +274,23 @@ async def update_jewelry(
 ):
     """Update jewelry item"""
     try:
-        # Check if item exists
-        existing = await db.jewelry_items.find_one({"item_id": item_id})
-        if not existing:
-            raise HTTPException(status_code=404, detail="Jewelry item not found")
-
-        # Prepare update data
-        update_data = {k: v for k, v in item.dict(exclude_unset=True).items()}
+        # Prepare update data with exclude_unset to avoid updating unchanged fields
+        update_data = item.dict(exclude_unset=True)
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No fields to update")
+            
         update_data["updated_at"] = datetime.utcnow()
 
-        # Update in database
-        await db.jewelry_items.update_one(
-            {"item_id": item_id}, {"$set": update_data}
+        # Use find_one_and_update to check existence and update in single operation
+        updated_item = await db.jewelry_items.find_one_and_update(
+            {"item_id": item_id},
+            {"$set": update_data},
+            return_document=True  # Return updated document
         )
 
-        # Get updated item
-        updated_item = await db.jewelry_items.find_one({"item_id": item_id})
+        if not updated_item:
+            raise HTTPException(status_code=404, detail="Jewelry item not found")
+
         updated_item["_id"] = str(updated_item["_id"])
 
         return {
@@ -345,15 +377,23 @@ async def get_item_analytics(
 ):
     """Get analytics for specific jewelry item"""
     try:
-        # Get item
-        item = await db.jewelry_items.find_one({"item_id": item_id})
+        # Use projection to only fetch needed fields
+        item_projection = {"item_id": 1, "name": 1, "analytics": 1}
+        event_projection = {"_id": 1, "event_type": 1, "timestamp": 1, "session_id": 1}
+        
+        # Fetch item and events in parallel
+        item, events = await asyncio.gather(
+            db.jewelry_items.find_one({"item_id": item_id}, item_projection),
+            db.analytics_events.find({"jewelry_id": item_id}, event_projection)
+                .sort("timestamp", -1)
+                .limit(100)
+                .to_list(length=100)
+        )
+        
         if not item:
             raise HTTPException(status_code=404, detail="Jewelry item not found")
 
-        # Get events
-        cursor = db.analytics_events.find({"jewelry_id": item_id}).sort("timestamp", -1).limit(100)
-        events = await cursor.to_list(length=100)
-
+        # Convert ObjectId to string efficiently
         for event in events:
             event["_id"] = str(event["_id"])
 
@@ -377,7 +417,7 @@ async def get_overall_analytics(
 ):
     """Get overall analytics summary"""
     try:
-        # Aggregate analytics
+        # Optimize aggregation pipeline with indexed match first
         pipeline = [
             {"$match": {"status": "active"}},
             {
@@ -393,7 +433,24 @@ async def get_overall_analytics(
             },
         ]
 
-        result = await db.jewelry_items.aggregate(pipeline).to_list(length=1)
+        # Use projection to reduce data in top_items query
+        top_items_projection = {
+            "item_id": 1,
+            "name": 1,
+            "type": 1,
+            "price": 1,
+            "analytics": 1,
+            "images.thumbnail": 1
+        }
+
+        # Run aggregation and top items query in parallel
+        result, top_items = await asyncio.gather(
+            db.jewelry_items.aggregate(pipeline).to_list(length=1),
+            db.jewelry_items.find(
+                {"status": "active"}, top_items_projection
+            ).sort("analytics.try_ons", -1).limit(5).to_list(length=5)
+        )
+        
         summary = result[0] if result else {}
 
         # Calculate conversion rate
@@ -401,11 +458,7 @@ async def get_overall_analytics(
         conversions = summary.get("total_conversions", 0)
         conversion_rate = (conversions / try_ons * 100) if try_ons > 0 else 0
 
-        # Get top items
-        top_items = await db.jewelry_items.find(
-            {"status": "active"}
-        ).sort("analytics.try_ons", -1).limit(5).to_list(length=5)
-
+        # Convert ObjectId to string efficiently
         for item in top_items:
             item["_id"] = str(item["_id"])
 

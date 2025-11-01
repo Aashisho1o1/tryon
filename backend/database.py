@@ -46,12 +46,20 @@ class MongoDB:
             await cls.db.jewelry_items.create_index("status")
             await cls.db.jewelry_items.create_index([("created_at", -1)])
             await cls.db.jewelry_items.create_index([("metadata.tags", 1)])
+            
+            # Compound indexes for common query patterns
+            await cls.db.jewelry_items.create_index([("status", 1), ("type", 1)])
+            await cls.db.jewelry_items.create_index([("status", 1), ("created_at", -1)])
+            await cls.db.jewelry_items.create_index([("status", 1), ("analytics.try_ons", -1)])
 
             # Analytics events indexes
             await cls.db.analytics_events.create_index("jewelry_id")
             await cls.db.analytics_events.create_index("event_type")
             await cls.db.analytics_events.create_index([("timestamp", -1)])
             await cls.db.analytics_events.create_index("session_id")
+            
+            # Compound index for common analytics queries
+            await cls.db.analytics_events.create_index([("jewelry_id", 1), ("timestamp", -1)])
 
             logger.info("Database indexes created successfully")
         except Exception as e:
