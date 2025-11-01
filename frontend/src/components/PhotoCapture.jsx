@@ -1,42 +1,49 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback, memo } from 'react';
 import Webcam from 'react-webcam';
 
-export default function PhotoCapture({ onCapture }) {
+function PhotoCapture({ onCapture }) {
   const [mode, setMode] = useState('upload'); // 'upload' or 'camera'
   const [preview, setPreview] = useState(null);
   const webcamRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  const handleFileUpload = (e) => {
+  // Memoize callbacks to prevent re-creation on every render
+  const handleFileUpload = useCallback((e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size must be less than 10MB');
+      return;
+    }
 
     const reader = new FileReader();
     reader.onloadend = () => {
       setPreview(reader.result);
     };
     reader.readAsDataURL(file);
-  };
+  }, []);
 
-  const capturePhoto = () => {
+  const capturePhoto = useCallback(() => {
     const imageSrc = webcamRef.current?.getScreenshot();
     if (imageSrc) {
       setPreview(imageSrc);
     }
-  };
+  }, []);
 
-  const confirmPhoto = () => {
+  const confirmPhoto = useCallback(() => {
     if (preview) {
       onCapture(preview);
     }
-  };
+  }, [preview, onCapture]);
 
-  const retake = () => {
+  const retake = useCallback(() => {
     setPreview(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  };
+  }, []);
 
   return (
     <div className="w-full max-w-2xl mx-auto">
@@ -80,12 +87,14 @@ export default function PhotoCapture({ onCapture }) {
                   ref={webcamRef}
                   audio={false}
                   screenshotFormat="image/jpeg"
+                  screenshotQuality={0.92}
                   className="w-full h-full object-cover"
                   videoConstraints={{
                     facingMode: 'user',
                     width: 1280,
                     height: 720,
                   }}
+                  mirrored={true}
                 />
                 <button
                   onClick={capturePhoto}
@@ -159,3 +168,6 @@ export default function PhotoCapture({ onCapture }) {
     </div>
   );
 }
+
+// Export memoized component to prevent unnecessary re-renders
+export default memo(PhotoCapture);

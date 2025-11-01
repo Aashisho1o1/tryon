@@ -1,28 +1,39 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo } from 'react';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
-export default function JewelrySelector({ onSelect, userPhoto }) {
+// Cache for jewelry data to avoid redundant API calls
+const jewelryCache = new Map();
+
+function JewelrySelector({ onSelect, userPhoto }) {
   const [jewelry, setJewelry] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    fetchJewelry();
-  }, [filter]);
+  // Memoized fetch function to prevent recreation on every render
+  const fetchJewelry = useCallback(async (currentFilter) => {
+    const cacheKey = `jewelry_${currentFilter}`;
+    
+    // Check cache first
+    if (jewelryCache.has(cacheKey)) {
+      setJewelry(jewelryCache.get(cacheKey));
+      setLoading(false);
+      return;
+    }
 
-  const fetchJewelry = async () => {
     try {
       setLoading(true);
-      const url = filter === 'all'
+      const url = currentFilter === 'all'
         ? `${API_BASE}/jewelry?page_size=20`
-        : `${API_BASE}/jewelry?type=${filter}&page_size=20`;
+        : `${API_BASE}/jewelry?type=${currentFilter}&page_size=20`;
 
       const response = await fetch(url);
       const data = await response.json();
 
       if (data.success) {
+        // Cache the results
+        jewelryCache.set(cacheKey, data.items);
         setJewelry(data.items);
       } else {
         setError('Failed to load jewelry');
@@ -33,9 +44,14 @@ export default function JewelrySelector({ onSelect, userPhoto }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const types = ['all', 'ring', 'earrings', 'necklace', 'bracelet'];
+  useEffect(() => {
+    fetchJewelry(filter);
+  }, [filter, fetchJewelry]);
+
+  // Memoize types array to prevent recreation
+  const types = useMemo(() => ['all', 'ring', 'earrings', 'necklace', 'bracelet'], []);
 
   return (
     <div className="w-full">
@@ -87,37 +103,7 @@ export default function JewelrySelector({ onSelect, userPhoto }) {
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {jewelry.map((item) => (
-            <div
-              key={item.item_id}
-              onClick={() => onSelect(item)}
-              className="bg-white rounded-xl shadow-md hover:shadow-xl transition cursor-pointer group overflow-hidden"
-            >
-              <div className="aspect-square bg-gradient-to-br from-purple-50 to-pink-50 flex items-center justify-center relative overflow-hidden">
-                {item.images?.main ? (
-                  <img
-                    src={item.images.main}
-                    alt={item.name}
-                    className="w-full h-full object-cover group-hover:scale-110 transition"
-                  />
-                ) : (
-                  <span className="text-6xl">{getEmoji(item.type)}</span>
-                )}
-                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition flex items-center justify-center">
-                  <span className="opacity-0 group-hover:opacity-100 bg-white text-purple-600 px-4 py-2 rounded-lg font-semibold text-sm transition">
-                    Try On
-                  </span>
-                </div>
-              </div>
-              <div className="p-4">
-                <h3 className="font-semibold text-gray-800 truncate">{item.name}</h3>
-                <p className="text-sm text-gray-500 capitalize">{item.type}</p>
-                {item.price && (
-                  <p className="text-lg font-bold text-purple-600 mt-2">
-                    Rs. {item.price.amount?.toLocaleString()}
-                  </p>
-                )}
-              </div>
-            </div>
+            <JewelryCard key={item.item_id} item={item} onSelect={onSelect} />
           ))}
         </div>
       )}
@@ -146,3 +132,45 @@ function getEmoji(type) {
 function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
+
+// Memoized JewelryCard component to prevent unnecessary re-renders
+const JewelryCard = memo(({ item, onSelect }) => {
+  return (
+    <div
+      onClick={() => onSelect(item)}
+      className="bg-white rounded-xl shadow-md hover:shadow-xl transition cursor-pointer group overflow-hidden"
+    >
+      <div className="aspect-square bg-gradient-to-br from-purple-50 to-pink-50 flex items-center justify-center relative overflow-hidden">
+        {item.images?.main ? (
+          <img
+            src={item.images.main}
+            alt={item.name}
+            loading="lazy"
+            className="w-full h-full object-cover group-hover:scale-110 transition"
+          />
+        ) : (
+          <span className="text-6xl">{getEmoji(item.type)}</span>
+        )}
+        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition flex items-center justify-center">
+          <span className="opacity-0 group-hover:opacity-100 bg-white text-purple-600 px-4 py-2 rounded-lg font-semibold text-sm transition">
+            Try On
+          </span>
+        </div>
+      </div>
+      <div className="p-4">
+        <h3 className="font-semibold text-gray-800 truncate">{item.name}</h3>
+        <p className="text-sm text-gray-500 capitalize">{item.type}</p>
+        {item.price && (
+          <p className="text-lg font-bold text-purple-600 mt-2">
+            Rs. {item.price.amount?.toLocaleString()}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+});
+
+JewelryCard.displayName = 'JewelryCard';
+
+// Export memoized component
+export default memo(JewelrySelector);
