@@ -12,3 +12,7 @@ passlib[bcrypt]==1.7.4
 aiofiles==23.2.1
 httpx==0.26.0
 pillow==10.2.0
+
+# AI Providers
+fal-client==0.4.1
+replicate==0.25.1

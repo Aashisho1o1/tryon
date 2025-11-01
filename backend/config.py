@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     API_PREFIX: str = "/api/v1"
     API_RATE_LIMIT: int = 100
 
+    # AI Providers
+    AI_PROVIDER: str = "fal"  # 'fal' or 'replicate'
+    FAL_API_KEY: str = ""
+    FAL_MODEL: str = "fal-ai/flux-pro/v1.1"
+    REPLICATE_API_TOKEN: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = True

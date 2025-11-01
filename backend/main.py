@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from nanoid import generate
 import logging
+from pydantic import BaseModel
+from typing import Optional, Dict, Any
 
 from config import settings
 from database import MongoDB, get_database
@@ -17,7 +19,9 @@ from models import (
     JewelryStatus,
     SuccessResponse,
     ErrorResponse,
+    ARConfigModel,
 )
+from lib.ai_providers import create_provider
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -420,6 +424,85 @@ async def get_overall_analytics(
         }
     except Exception as e:
         logger.error(f"Error fetching overall analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==============================================
+# AI Try-On Endpoint
+# ==============================================
+
+class TryOnRequest(BaseModel):
+    """Try-on request model"""
+    user_photo: str  # Base64 or URL
+    jewelry_id: str
+    options: Optional[Dict[str, Any]] = {}
+
+
+@app.post(f"{settings.API_PREFIX}/tryon")
+async def ai_tryon(
+    request: TryOnRequest,
+    db: AsyncIOMotorDatabase = Depends(get_database),
+):
+    """AI-powered jewelry try-on using image generation"""
+    try:
+        # Get jewelry item
+        jewelry = await db.jewelry_items.find_one({"item_id": request.jewelry_id})
+        if not jewelry:
+            raise HTTPException(status_code=404, detail="Jewelry item not found")
+
+        # Prepare jewelry data for AI
+        jewelry_data = {
+            "type": jewelry.get("type", "ring"),
+            "name": jewelry.get("name", ""),
+            "metal": jewelry.get("metadata", {}).get("metal", "gold"),
+            "stone": jewelry.get("metadata", {}).get("stone", ""),
+            "style": jewelry.get("metadata", {}).get("style", "elegant"),
+        }
+
+        # Get AI provider from settings
+        provider_name = settings.AI_PROVIDER
+        provider_config = {
+            "api_key": settings.FAL_API_KEY if provider_name == "fal" else settings.REPLICATE_API_TOKEN,
+            "model": settings.FAL_MODEL if provider_name == "fal" else "black-forest-labs/flux-1.1-pro",
+        }
+
+        # Create provider
+        provider = create_provider(provider_name, provider_config)
+
+        logger.info(f"Using AI provider: {provider.name} for jewelry: {request.jewelry_id}")
+
+        # Process image
+        result = await provider.place_jewelry(
+            user_photo=request.user_photo,
+            jewelry_data=jewelry_data,
+            options=request.options
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail=f"AI processing failed: {result.get('error', 'Unknown error')}"
+            )
+
+        # Track try-on analytics
+        await db.jewelry_items.update_one(
+            {"item_id": request.jewelry_id},
+            {"$inc": {"analytics.try_ons": 1}}
+        )
+
+        logger.info(f"Try-on successful. Cost: ${result.get('cost', 0)}")
+
+        return {
+            "success": True,
+            "image_url": result["image_url"],
+            "metadata": result.get("metadata", {}),
+            "cost": result.get("cost", 0),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in AI try-on: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

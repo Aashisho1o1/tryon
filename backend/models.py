@@ -49,7 +49,7 @@ class ImagesModel(BaseModel):
 class ARConfigModel(BaseModel):
     """AR rendering configuration"""
     color: str = "#FFD700"
-    size: int = Field(30, ge=10, le=100)
+    size: int = Field(default=30, ge=10, le=100)
     position_offset: Dict[str, int] = {"x": 0, "y": 0}
     landmarks: List[int] = [234, 454]  # MediaPipe landmarks
     render_type: str = "circle"  # circle, image, 3d_model
@@ -67,7 +67,7 @@ class MetadataModel(BaseModel):
 class StockModel(BaseModel):
     """Stock information"""
     available: bool = True
-    quantity: int = Field(0, ge=0)
+    quantity: int = Field(default=0, ge=0)
     low_stock_threshold: int = 3
 
 
