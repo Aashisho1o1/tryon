@@ -556,8 +556,10 @@ async def ai_tryon(
         }
 
         # Get or create cached AI provider to avoid recreation overhead
+        # Use hash to avoid exposing any part of API keys
         provider_name = settings.AI_PROVIDER
-        cache_key = f"{provider_name}_{settings.FAL_API_KEY[:8] if provider_name == 'fal' else settings.REPLICATE_API_TOKEN[:8]}"
+        api_key = settings.FAL_API_KEY if provider_name == "fal" else settings.REPLICATE_API_TOKEN
+        cache_key = f"{provider_name}_{hash(api_key)}"
         
         if cache_key not in _ai_provider_cache:
             provider_config = {

@@ -11,6 +11,14 @@ logger = logging.getLogger(__name__)
 # Reusing connections significantly reduces latency for multiple requests
 _shared_client: Optional[httpx.AsyncClient] = None
 
+# Replicate polling configuration
+# Optimized for balance between responsiveness and server load
+REPLICATE_MAX_ATTEMPTS = 30
+REPLICATE_INITIAL_DELAYS = [0.5, 0.5, 1.0, 1.5, 2.0]  # Fast initial polls
+REPLICATE_EXPONENTIAL_BASE = 2.0  # Base for exponential backoff
+REPLICATE_EXPONENTIAL_MULTIPLIER = 1.5  # Multiplier for exponential backoff
+REPLICATE_MAX_DELAY = 5.0  # Maximum delay between polls
+
 
 async def get_http_client() -> httpx.AsyncClient:
     """Get or create shared HTTP client with connection pooling"""
@@ -194,16 +202,16 @@ class ReplicateProvider(AIProvider):
 
                 # Poll for result with optimized exponential backoff
                 # In production, webhooks are recommended for better efficiency
-                max_attempts = 30
-                delays = [0.5, 0.5, 1.0, 1.5, 2.0]  # Initial faster polls, then slower
-                
-                for attempt in range(max_attempts):
+                for attempt in range(REPLICATE_MAX_ATTEMPTS):
                     # Use predefined delays for first few attempts, then exponential backoff
-                    if attempt < len(delays):
-                        delay = delays[attempt]
+                    if attempt < len(REPLICATE_INITIAL_DELAYS):
+                        delay = REPLICATE_INITIAL_DELAYS[attempt]
                     else:
-                        # After initial fast polls, use exponential backoff capped at 5s
-                        delay = min(2.0 * (1.5 ** (attempt - len(delays))), 5.0)
+                        # After initial fast polls, use exponential backoff capped at max delay
+                        delay = min(
+                            REPLICATE_EXPONENTIAL_BASE * (REPLICATE_EXPONENTIAL_MULTIPLIER ** (attempt - len(REPLICATE_INITIAL_DELAYS))),
+                            REPLICATE_MAX_DELAY
+                        )
                     
                     await asyncio.sleep(delay)
                     
