@@ -28,6 +28,9 @@ from lib.ai_providers import create_provider, close_http_client
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Cache AI provider instance to avoid recreating on each request
+_ai_provider_cache: Dict[str, Any] = {}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -396,13 +399,13 @@ async def track_event(
             "interactions": event.interactions.dict() if event.interactions else {},
         }
 
-        # Insert event
-        await db.analytics_events.insert_one(event_doc)
-
-        # Update item analytics
+        # Insert event and update analytics in parallel for better performance
         update_field = f"analytics.{event.event_type}s"
-        await db.jewelry_items.update_one(
-            {"item_id": event.jewelry_id}, {"$inc": {update_field: 1}}
+        await asyncio.gather(
+            db.analytics_events.insert_one(event_doc),
+            db.jewelry_items.update_one(
+                {"item_id": event.jewelry_id}, {"$inc": {update_field: 1}}
+            )
         )
 
         return {"success": True, "message": "Event tracked successfully"}
@@ -537,8 +540,9 @@ async def ai_tryon(
 ):
     """AI-powered jewelry try-on using image generation"""
     try:
-        # Get jewelry item
-        jewelry = await db.jewelry_items.find_one({"item_id": request.jewelry_id})
+        # Get jewelry item with projection - only fetch needed fields
+        projection = {"type": 1, "name": 1, "metadata": 1}
+        jewelry = await db.jewelry_items.find_one({"item_id": request.jewelry_id}, projection)
         if not jewelry:
             raise HTTPException(status_code=404, detail="Jewelry item not found")
 
@@ -551,16 +555,19 @@ async def ai_tryon(
             "style": jewelry.get("metadata", {}).get("style", "elegant"),
         }
 
-        # Get AI provider from settings
+        # Get or create cached AI provider to avoid recreation overhead
         provider_name = settings.AI_PROVIDER
-        provider_config = {
-            "api_key": settings.FAL_API_KEY,
-            "api_token": settings.REPLICATE_API_TOKEN,
-            "model": settings.FAL_MODEL if provider_name == "fal" else "black-forest-labs/flux-1.1-pro",
-        }
-
-        # Create provider
-        provider = create_provider(provider_name, provider_config)
+        cache_key = f"{provider_name}_{settings.FAL_API_KEY[:8] if provider_name == 'fal' else settings.REPLICATE_API_TOKEN[:8]}"
+        
+        if cache_key not in _ai_provider_cache:
+            provider_config = {
+                "api_key": settings.FAL_API_KEY,
+                "api_token": settings.REPLICATE_API_TOKEN,
+                "model": settings.FAL_MODEL if provider_name == "fal" else "black-forest-labs/flux-1.1-pro",
+            }
+            _ai_provider_cache[cache_key] = create_provider(provider_name, provider_config)
+        
+        provider = _ai_provider_cache[cache_key]
 
         logger.info(f"Using AI provider: {provider.name} for jewelry: {request.jewelry_id}")
 
