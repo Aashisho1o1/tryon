@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import PhotoCapture from '../components/PhotoCapture';
 import JewelrySelector from '../components/JewelrySelector';
 import ResultDisplay from '../components/ResultDisplay';
@@ -13,19 +13,23 @@ export default function TryOnPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState(null);
 
-  const handlePhotoCapture = (photo) => {
+  // Memoize callbacks to prevent re-creation on every render
+  const handlePhotoCapture = useCallback((photo) => {
     setUserPhoto(photo);
     setStep(2);
     setError(null);
-  };
+  }, []);
 
-  const handleJewelrySelect = async (jewelry) => {
+  const handleJewelrySelect = useCallback(async (jewelry) => {
     setSelectedJewelry(jewelry);
     setStep(3);
     setIsProcessing(true);
     setError(null);
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
       const response = await fetch(`${API_BASE}/tryon`, {
         method: 'POST',
         headers: {
@@ -40,8 +44,10 @@ export default function TryOnPage() {
             guidance: 3.5,
           },
         }),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
       const data = await response.json();
 
       if (data.success) {
@@ -52,28 +58,32 @@ export default function TryOnPage() {
         setStep(2);
       }
     } catch (err) {
-      console.error('Try-on error:', err);
-      setError('Network error. Make sure backend is running and API key is set.');
+      if (err.name === 'AbortError') {
+        setError('Request timeout. Please try again.');
+      } else {
+        console.error('Try-on error:', err);
+        setError('Network error. Make sure backend is running and API key is set.');
+      }
       setStep(2);
     } finally {
       setIsProcessing(false);
     }
-  };
+  }, [userPhoto]);
 
-  const reset = () => {
+  const reset = useCallback(() => {
     setStep(1);
     setUserPhoto(null);
     setSelectedJewelry(null);
     setResult(null);
     setError(null);
-  };
+  }, []);
 
-  const tryAnother = () => {
+  const tryAnother = useCallback(() => {
     setStep(2);
     setSelectedJewelry(null);
     setResult(null);
     setError(null);
-  };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-pink-50 py-8 px-4">

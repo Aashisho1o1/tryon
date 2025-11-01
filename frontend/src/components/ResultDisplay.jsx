@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useCallback, memo } from 'react';
 
-export default function ResultDisplay({ result, jewelry, onReset, onTryAnother }) {
+function ResultDisplay({ result, jewelry, onReset, onTryAnother }) {
   const [showShareMenu, setShowShareMenu] = useState(false);
 
-  const downloadImage = async () => {
+  // Memoize callbacks to prevent re-creation on every render
+  const downloadImage = useCallback(async () => {
     try {
       const response = await fetch(result.image_url);
       const blob = await response.blob();
@@ -19,9 +20,9 @@ export default function ResultDisplay({ result, jewelry, onReset, onTryAnother }
       console.error('Download failed:', error);
       alert('Download failed. Try right-click and save image.');
     }
-  };
+  }, [result.image_url, jewelry.name]);
 
-  const shareToSocial = (platform) => {
+  const shareToSocial = useCallback((platform) => {
     const text = `Check out how ${jewelry.name} looks on me! 💎`;
     const url = result.image_url;
 
@@ -36,12 +37,12 @@ export default function ResultDisplay({ result, jewelry, onReset, onTryAnother }
     if (links[platform]) {
       window.open(links[platform], '_blank');
     }
-  };
+  }, [jewelry.name, result.image_url]);
 
-  const copyLink = () => {
+  const copyLink = useCallback(() => {
     navigator.clipboard.writeText(result.image_url);
     alert('Link copied to clipboard!');
-  };
+  }, [result.image_url]);
 
   return (
     <div className="w-full max-w-4xl mx-auto">
@@ -182,3 +183,6 @@ export default function ResultDisplay({ result, jewelry, onReset, onTryAnother }
     </div>
   );
 }
+
+// Export memoized component to prevent unnecessary re-renders
+export default memo(ResultDisplay);
