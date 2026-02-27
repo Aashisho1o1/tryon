@@ -48,7 +48,7 @@ MONGODB_URL=mongodb://localhost:27017
 
 **For MongoDB Atlas (cloud):**
 ```env
-MONGODB_URL=mongodb+srv://username:password@cluster.mongodb.net
+MONGODB_URL=mongodb+srv://<YOUR_USERNAME>:<YOUR_PASSWORD>@<YOUR_CLUSTER>.mongodb.net
 ```
 
 ### 3. Install and Start MongoDB (if using local)
@@ -264,7 +264,7 @@ docker run -p 8000:8000 \
 
 Example connection string:
 ```
-mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/jewelry_ar_db?retryWrites=true&w=majority
+mongodb+srv://<YOUR_USERNAME>:<YOUR_PASSWORD>@<YOUR_CLUSTER>.mongodb.net/jewelry_ar_db?retryWrites=true&w=majority
 ```
 
 ## Troubleshooting

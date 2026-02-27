@@ -22,7 +22,7 @@ Get your prototype running in **15 minutes**!
 10. Once cluster is ready, click "Connect" → "Connect your application"
 11. Copy the connection string, it looks like:
     ```
-    mongodb+srv://admin:YOUR_PASSWORD@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority
+    mongodb+srv://<YOUR_USERNAME>:<YOUR_PASSWORD>@<YOUR_CLUSTER>.mongodb.net/?retryWrites=true&w=majority
     ```
 12. **Save this connection string!** You'll need it in Step 3.
 
